@@ -69,7 +69,13 @@ const status = document.getElementById('status');
 try {
   // ---- load MuJoCo + files into its virtual filesystem
   const mj = await loadMujoco();
-  const xmlText = await (await fetch(XML)).text();
+
+  // fetch hand.xml and give a clear error if it is missing or is not real XML
+  const xr = await fetch(XML, {cache: 'no-store'});
+  if (!xr.ok) throw new Error('Missing ' + XML + ' (HTTP ' + xr.status + '). Put hand.xml in the same folder as index.html.');
+  const xmlText = await xr.text();
+  if (!xmlText.trimStart().startsWith('<mujoco')) throw new Error(XML + ' does not start with <mujoco>. The wrong file was uploaded under that name.');
+
   const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
   mj.FS.mkdir('/working');
   const made = new Set(['/working']);
@@ -81,8 +87,8 @@ try {
   put('hand.xml', xmlText);
   await Promise.all([...doc.querySelectorAll('mesh')].map(async m => {
     const f = m.getAttribute('file');
-    const r = await fetch(f.split('/').map(encodeURIComponent).join('/'));
-    if (!r.ok) throw new Error('Missing mesh file: ' + f);
+    const r = await fetch(f.split('/').map(encodeURIComponent).join('/'), {cache: 'no-store'});
+    if (!r.ok) throw new Error('Missing mesh file: ' + f + ' (HTTP ' + r.status + ')');
     put(f, new Uint8Array(await r.arrayBuffer()));
   }));
 
