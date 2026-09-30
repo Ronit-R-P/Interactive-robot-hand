@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interactive Robotic Hand</title>
+<style>
+:root{--bg:#0f1115;--panel:#171a21;--line:#2a2f3a;--text:#e7e9ee;--dim:#9aa3b2;--acc:#4da3ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{display:grid;grid-template-columns:1fr 340px;height:100vh}
+#view{position:relative;overflow:hidden;background:radial-gradient(circle at 50% 40%,#232834,#0f1115)}
+#view canvas{display:block;width:100%;height:100%}
+#status{position:absolute;left:14px;bottom:12px;color:var(--dim);font-size:13px}
+#hint{position:absolute;left:14px;top:12px;color:var(--dim);font-size:12px}
+#cubebox{position:absolute;right:18px;top:18px;width:56px;height:56px;perspective:300px}
+#cube{position:absolute;inset:0;transform-style:preserve-3d}
+#cube div{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;
+ background:rgba(77,163,255,.18);border:1px solid var(--acc);color:var(--text);cursor:pointer;user-select:none}
+#cube div:hover{background:rgba(77,163,255,.5)}
+aside{background:var(--panel);border-left:1px solid var(--line);padding:18px;overflow:auto}
+aside h2{margin:0 0 4px;font-size:17px}
+aside p{margin:0 0 14px;color:var(--dim);font-size:13px}
+.row{margin-bottom:12px}
+.row label{display:flex;justify-content:space-between;font-size:13px;color:var(--dim)}
+.row input{width:100%;accent-color:var(--acc)}
+button{background:var(--acc);color:#04121f;border:0;border-radius:6px;padding:8px 14px;font-weight:600;cursor:pointer}
+#contact{min-height:60vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:60px 20px;border-top:1px solid var(--line)}
+#contact h2{font-size:28px;margin:0}
+#contact p{color:var(--dim);margin:6px 0 22px}
+#contact a{color:var(--acc);text-decoration:none;font-size:18px;margin:6px 0}
+#contact a:hover{text-decoration:underline}
+@media(max-width:800px){main{grid-template-columns:1fr;grid-template-rows:60vh auto;height:auto}aside{border-left:0;border-top:1px solid var(--line)}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<main>
+  <div id="view">
+    <div id="hint">Drag: rotate · Right-drag: pan · Scroll: zoom · Click cube faces: snap view</div>
+    <div id="cubebox"><div id="cube"></div></div>
+    <div id="status">Loading physics…</div>
+  </div>
+  <aside>
+    <h2>Actuators</h2>
+    <p>Drive each of the 10 joints live.</p>
+    <div id="sliders"></div>
+    <button id="reset">Reset pose</button>
+  </aside>
+</main>
+
+<section id="contact">
+  <h2>Ronit Rajib Pattnaik</h2>
+  <p>Mechanical Engineering · Robotics</p>
+  <a href="mailto:YOUR_EMAIL@example.com">YOUR_EMAIL@example.com</a>
+  <a href="https://www.linkedin.com/in/YOUR-PROFILE" target="_blank" rel="noopener">LinkedIn</a>
+</section>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import loadMujoco from 'https://cdn.jsdelivr.net/npm/@mujoco/mujoco@3.14.0/mujoco.js';
+
+const XML = 'hand.xml';                 // your MuJoCo file, next to this page
+const status = document.getElementById('status');
+
+try {
+  // ---- load MuJoCo + files into its virtual filesystem
+  const mj = await loadMujoco();
+  const xmlText = await (await fetch(XML)).text();
+  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+  mj.FS.mkdir('/working');
+  const made = new Set(['/working']);
+  const put = (p, d) => {
+    let cur = '/working';
+    for (const s of p.split('/').slice(0, -1)) { cur += '/' + s; if (!made.has(cur)) { mj.FS.mkdir(cur); made.add(cur); } }
+    mj.FS.writeFile('/working/' + p, d);
+  };
+  put('hand.xml', xmlText);
+  await Promise.all([...doc.querySelectorAll('mesh')].map(async m => {
+    const f = m.getAttribute('file');
+    const r = await fetch(f.split('/').map(encodeURIComponent).join('/'));
+    if (!r.ok) throw new Error('Missing mesh file: ' + f);
+    put(f, new Uint8Array(await r.arrayBuffer()));
+  }));
+
+  const model = mj.MjModel.from_xml_path('/working/hand.xml');
+  const data = new mj.MjData(model);
+  mj.mj_forward(model, data);
+
+  // ---- three.js scene
+  const view = document.getElementById('view');
+  const renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  view.prepend(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.1));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(1, -1, 2); scene.add(sun);
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.005, 50);
+  camera.up.set(0, 0, 1);                       // MuJoCo is Z-up
+
+  const meshes = [];
+  const gt = model.geom_type, gd = model.geom_dataid, rgba = model.geom_rgba;
+  for (let g = 0; g < model.ngeom; g++) {
+    if (gt[g] !== 7) continue;                  // 7 = mesh geom
+    const d = gd[g];
+    const va = model.mesh_vertadr[d], vn = model.mesh_vertnum[d];
+    const fa = model.mesh_faceadr[d], fn = model.mesh_facenum[d];
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(model.mesh_vert.slice(va * 3, (va + vn) * 3), 3));
+    geo.setIndex(Array.from(model.mesh_face.slice(fa * 3, (fa + fn) * 3)));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(rgba[4*g], rgba[4*g+1], rgba[4*g+2]), metalness: .25, roughness: .5});
+    const m = new THREE.Mesh(geo, mat);
+    m.matrixAutoUpdate = false;
+    scene.add(m); meshes.push([g, m]);
+  }
+  function syncMeshes() {
+    const p = data.geom_xpos, x = data.geom_xmat;
+    for (const [g, m] of meshes) {
+      const o = 9 * g, q = 3 * g;
+      m.matrix.set(x[o], x[o+1], x[o+2], p[q], x[o+3], x[o+4], x[o+5], p[q+1], x[o+6], x[o+7], x[o+8], p[q+2], 0, 0, 0, 1);
+      m.matrixWorldNeedsUpdate = true;
+    }
+  }
+  syncMeshes(); scene.updateMatrixWorld(true);
+
+  // frame the hand
+  const box = new THREE.Box3().setFromObject(scene);
+  const ctr = box.getCenter(new THREE.Vector3()), dist = box.getSize(new THREE.Vector3()).length() * 1.3;
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.target.copy(ctr);
+  camera.position.set(ctr.x, ctr.y - dist, ctr.z + dist * 0.3);
+
+  const resize = () => { const w = view.clientWidth, h = view.clientHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); };
+  new ResizeObserver(resize).observe(view); resize();
+
+  // ---- sliders (one per actuator)
+  const names = [...doc.querySelectorAll('actuator > *')].map(e => e.getAttribute('name') || 'actuator');
+  const cr = model.actuator_ctrlrange, init = [], inputs = [];
+  const box_ = document.getElementById('sliders');
+  for (let i = 0; i < model.nu; i++) {
+    const lo = cr[2*i], hi = cr[2*i+1]; init.push(hi);
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<label><span>${(names[i] || 'act ' + i).replace(/_act$/, '').replace(/_/g, ' ')}</span><span class="v"></span></label>
+      <input type="range" min="${lo}" max="${hi}" step="0.005" value="${hi}">`;
+    const inp = row.querySelector('input'), v = row.querySelector('.v');
+    const set = () => { data.ctrl[i] = +inp.value; v.textContent = (+inp.value).toFixed(2) + ' rad'; };
+    inp.addEventListener('input', set); set();
+    inputs.push([inp, set]); box_.appendChild(row);
+  }
+  document.getElementById('reset').onclick = () => inputs.forEach(([inp, set], i) => { inp.value = init[i]; set(); });
+
+  // ---- view cube (click a face to snap camera)
+  const faces = [
+    ['TOP',   'translateZ(28px)',                 [0, -0.001, 1]],
+    ['BOTTOM','rotateY(180deg) translateZ(28px)', [0, 0.001, -1]],
+    ['RIGHT', 'rotateY(90deg) translateZ(28px)',  [1, 0, 0]],
+    ['LEFT',  'rotateY(-90deg) translateZ(28px)', [-1, 0, 0]],
+    ['BACK',  'rotateX(-90deg) translateZ(28px)', [0, 1, 0]],
+    ['FRONT', 'rotateX(90deg) translateZ(28px)',  [0, -1, 0]],
+  ];
+  const cube = document.getElementById('cube');
+  let anim = null;
+  for (const [label, tf, dir] of faces) {
+    const f = document.createElement('div'); f.textContent = label; f.style.transform = tf;
+    f.onclick = () => {
+      const a = camera.position.clone().sub(controls.target);
+      anim = {t0: performance.now(), d: a.length(), a: a.normalize(), q: new THREE.Quaternion().setFromUnitVectors(a, new THREE.Vector3(...dir).normalize())};
+    };
+    cube.appendChild(f);
+  }
+
+  // ---- main loop
+  status.textContent = 'MuJoCo running in your browser';
+  const stepsPerFrame = Math.max(1, Math.round((1 / 60) / model.opt.timestep));
+  const idQ = new THREE.Quaternion();
+  function loop(now) {
+    requestAnimationFrame(loop);
+    for (let s = 0; s < stepsPerFrame; s++) mj.mj_step(model, data);
+    syncMeshes();
+    if (anim) {
+      const k = Math.min(1, (now - anim.t0) / 450), e = k * (2 - k);
+      const v = anim.a.clone().applyQuaternion(idQ.clone().slerp(anim.q, e));
+      camera.position.copy(controls.target).addScaledVector(v, anim.d);
+      if (k === 1) anim = null;
+    }
+    controls.update();
+    renderer.render(scene, camera);
+    const e = camera.matrixWorldInverse.elements;
+    cube.style.transform = `matrix3d(${e[0]},${-e[1]},${e[2]},0,${e[4]},${-e[5]},${e[6]},0,${e[8]},${-e[9]},${e[10]},0,0,0,0,1)`;
+  }
+  requestAnimationFrame(loop);
+} catch (err) {
+  status.textContent = 'Error: ' + err.message;
+  console.error(err);
+}
+</script>
+</body>
+</html>
