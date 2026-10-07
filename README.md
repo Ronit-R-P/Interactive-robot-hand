@@ -8,5 +8,6 @@ Interactively control the hand's actuators using sliders.
 View joint movements in real time directly in the browser.
 Explore the underlying meshes and model structure.
 
+Live Demo: https://ronit-r-p.github.io/Interactive-robot-hand/
 
 Built with MuJoCo/WebAssembly and web-based 3D visualization, and deployed using GitHub Pages.
