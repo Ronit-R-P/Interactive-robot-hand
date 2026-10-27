@@ -4,6 +4,8 @@
 
 The current version is intended primarily as a **demonstration and preliminary testing platform**, allowing prospective users to explore basic prosthetic-hand movement before considering a more expensive, permanent prosthetic solution.
 
+##Visualize: https://ronit-r-p.github.io/Interactive-robot-hand/
+
 ## Project Overview
 
 Access to prosthetic devices can involve a substantial financial commitment. TruTouch explores an alternative approach: an openly documented, customizable robotic hand that can be fabricated using 3D printing and commonly available electronic and mechanical components.
