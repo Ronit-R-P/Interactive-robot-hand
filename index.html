@@ -66,6 +66,19 @@ import loadMujoco from 'https://cdn.jsdelivr.net/npm/@mujoco/mujoco@3.14.0/mujoc
 const XML = 'hand.xml';                 // your MuJoCo file, next to this page
 const status = document.getElementById('status');
 
+const startTime = performance.now();
+let stage = 'Starting';
+
+function setStage(message) {
+  stage = message;
+  status.textContent = message;
+  console.log(
+    `[Hand loader +${((performance.now() - startTime) / 1000).toFixed(1)}s] ${message}`
+  );
+}
+
+setStage('Loading Three.js and MuJoCo...');
+
 try {
   // ---- load MuJoCo + files into its virtual filesystem
   const mj = await loadMujoco();
