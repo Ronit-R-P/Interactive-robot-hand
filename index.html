@@ -126,6 +126,10 @@ try {
 
   const meshes = [];
   const gt = model.geom_type, gd = model.geom_dataid, rgba = model.geom_rgba;
+
+ console.log('MuJoCo geoms:', model.ngeom);
+ console.log('MuJoCo mesh assets:', model.nmesh);
+ console.log('Starting Three.js geometry creation...');
   for (let g = 0; g < model.ngeom; g++) {
     if (gt[g] !== 7) continue;                  // 7 = mesh geom
     const d = gd[g];
@@ -140,6 +144,7 @@ try {
     m.matrixAutoUpdate = false;
     scene.add(m); meshes.push([g, m]);
   }
+  console.log('Three.js meshes created:', meshes.length);
   function syncMeshes() {
     const p = data.geom_xpos, x = data.geom_xmat;
     for (const [g, m] of meshes) {
