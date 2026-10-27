@@ -85,7 +85,7 @@ try {
   setStage('MuJoCo initialized. Loading hand.xml...');
 
   // fetch hand.xml and give a clear error if it is missing or is not real XML
-  const xr = await fetch(XML, {cache: 'no-store'});
+  const xr = await fetch(XML);
   if (!xr.ok) throw new Error('Missing ' + XML + ' (HTTP ' + xr.status + '). Put hand.xml in the same folder as index.html.');
   const xmlText = await xr.text();
   setStage('XML downloaded. Loading mesh assets...');
@@ -102,7 +102,7 @@ try {
   put('hand.xml', xmlText);
   await Promise.all([...doc.querySelectorAll('mesh')].map(async m => {
     const f = m.getAttribute('file');
-    const r = await fetch(f.split('/').map(encodeURIComponent).join('/'), {cache: 'no-store'});
+    const r = await fetch(f.split('/').map(encodeURIComponent).join('/'));
     if (!r.ok) throw new Error('Missing mesh file: ' + f + ' (HTTP ' + r.status + ')');
     put(f, new Uint8Array(await r.arrayBuffer()));
   }));
