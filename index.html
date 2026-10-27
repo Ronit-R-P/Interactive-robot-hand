@@ -82,11 +82,13 @@ setStage('Loading Three.js and MuJoCo...');
 try {
   // ---- load MuJoCo + files into its virtual filesystem
   const mj = await loadMujoco();
+  setStage('MuJoCo initialized. Loading hand.xml...');
 
   // fetch hand.xml and give a clear error if it is missing or is not real XML
   const xr = await fetch(XML, {cache: 'no-store'});
   if (!xr.ok) throw new Error('Missing ' + XML + ' (HTTP ' + xr.status + '). Put hand.xml in the same folder as index.html.');
   const xmlText = await xr.text();
+  setStage('XML downloaded. Loading mesh assets...');
   if (!xmlText.trimStart().startsWith('<mujoco')) throw new Error(XML + ' does not start with <mujoco>. The wrong file was uploaded under that name.');
 
   const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
@@ -105,10 +107,12 @@ try {
     put(f, new Uint8Array(await r.arrayBuffer()));
   }));
 
+  setStage('Building physics model...');
   const model = mj.MjModel.from_xml_path('/working/hand.xml');
   const data = new mj.MjData(model);
   mj.mj_forward(model, data);
 
+  setStage('Physics model loaded. Building 3D scene...');
   // ---- three.js scene
   const view = document.getElementById('view');
   const renderer = new THREE.WebGLRenderer({antialias: true, alpha: true});
